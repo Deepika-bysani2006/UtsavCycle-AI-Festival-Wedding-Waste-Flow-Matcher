@@ -1,6 +1,12 @@
 # UtsavCycle AI ♻️
 ### Turn Event & Festival Waste into Community Resources
 
+[![Live Vercel Deployment](https://img.shields.io/badge/Vercel-Deployment-brightgreen?style=for-the-badge&logo=vercel)](https://utsavai-beta.vercel.app)
+[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-blue?style=for-the-badge&logo=github)](https://github.com/Deepika-bysani2006/UtsavCycle-AI-Festival-Wedding-Waste-Flow-Matcher)
+
+🌐 **Live Application**: [https://utsavai-beta.vercel.app](https://utsavai-beta.vercel.app)  
+📦 **GitHub Repository**: [UtsavCycle-AI-Festival-Wedding-Waste-Flow-Matcher](https://github.com/Deepika-bysani2006/UtsavCycle-AI-Festival-Wedding-Waste-Flow-Matcher)
+
 **UtsavCycle AI** is an end-to-end, AI-powered sustainability platform designed for Indian weddings, festivals, pujas, corporate gatherings, and large community events. It predicts waste generation, connects event organizers with verified recovery partners, tracks pickup logistics, and quantifies environmental impact in real time.
 
 ---
