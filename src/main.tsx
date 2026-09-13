@@ -5,7 +5,11 @@ import './index.css'
 import { registerSW } from 'virtual:pwa-register'
 
 // Auto-register service worker for PWA
-registerSW({ immediate: true })
+try {
+  registerSW({ immediate: true })
+} catch (e) {
+  console.warn('PWA registration:', e)
+}
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

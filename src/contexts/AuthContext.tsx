@@ -35,24 +35,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
-      if (user) {
-        // Use timeout so a Firestore outage never freezes the loading screen
-        const profile = await withTimeout(getUserProfile(user.uid));
-        setUserProfile(profile);
-      } else {
-        setUserProfile(null);
-      }
+    if (!auth) {
       setLoading(false);
-    });
+      return;
+    }
+
+    let unsub = () => {};
+    try {
+      unsub = onAuthStateChanged(auth, async (user) => {
+        setCurrentUser(user);
+        if (user) {
+          // Use timeout so a Firestore outage never freezes the loading screen
+          const profile = await withTimeout(getUserProfile(user.uid));
+          setUserProfile(profile);
+        } else {
+          setUserProfile(null);
+        }
+        setLoading(false);
+      });
+    } catch {
+      setLoading(false);
+    }
 
     // Safety net: if onAuthStateChanged itself never fires (offline / config error),
-    // stop loading after 8 seconds so the user sees the login page instead of a spinner
-    const safetyTimer = setTimeout(() => setLoading(false), 8000);
+    // stop loading after 3 seconds so the user sees the landing page instead of a spinner
+    const safetyTimer = setTimeout(() => setLoading(false), 3000);
 
     return () => {
-      unsub();
+      try { unsub(); } catch { /* ignore */ }
       clearTimeout(safetyTimer);
     };
   }, []);
