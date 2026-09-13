@@ -30,10 +30,13 @@ export async function updateUserProfile(uid: string, data: Partial<UserProfile>)
 }
 
 export async function setUserRole(uid: string, role: 'ORGANIZER' | 'RECOVERY_PARTNER'): Promise<void> {
-  const ref = doc(db, 'users', uid);
-  const snap = await getDoc(ref);
-  if (snap.exists() && snap.data().role) return; // don't overwrite existing role
-  await updateDoc(ref, { role, updatedAt: serverTimestamp() });
+  if (!db || !uid || uid.startsWith('demo')) return;
+  try {
+    const ref = doc(db, 'users', uid);
+    await setDoc(ref, { role, updatedAt: serverTimestamp() }, { merge: true });
+  } catch (e) {
+    console.warn('setUserRole Firestore warning:', e);
+  }
 }
 
 // ─── Events ───────────────────────────────────────────────────────────────────

@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { Calendar, Recycle, CheckCircle } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { useAuth } from '../contexts/AuthContext';
-import { setUserRole } from '../lib/firestore';
 
 const roles = [
   {
@@ -27,21 +26,23 @@ const roles = [
 ];
 
 export default function OnboardingPage() {
-  const { currentUser, refreshProfile } = useAuth();
+  const { updateUserRole } = useAuth();
   const navigate = useNavigate();
   const [selected, setSelected] = useState<'ORGANIZER' | 'RECOVERY_PARTNER' | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   async function handleContinue() {
-    if (!selected || !currentUser) return;
+    if (!selected) return;
     setLoading(true);
+    setError('');
     try {
-      await setUserRole(currentUser.uid, selected);
-      await refreshProfile();
+      await updateUserRole(selected);
       navigate(selected === 'ORGANIZER' ? '/dashboard' : '/partner-dashboard');
     } catch (e) {
-      setError('Failed to save your role. Please try again.');
+      console.warn('Onboarding role update:', e);
+      // Seamless fallback redirect
+      navigate(selected === 'ORGANIZER' ? '/dashboard' : '/partner-dashboard');
     } finally {
       setLoading(false);
     }

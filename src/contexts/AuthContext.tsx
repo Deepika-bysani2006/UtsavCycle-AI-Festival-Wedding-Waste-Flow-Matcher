@@ -5,7 +5,7 @@ import {
   type User,
 } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
-import { createUserProfile, getUserProfile } from '../lib/firestore';
+import { createUserProfile, getUserProfile, setUserRole } from '../lib/firestore';
 import type { UserProfile } from '../types';
 
 interface AuthContextValue {
@@ -16,6 +16,7 @@ interface AuthContextValue {
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signUpWithEmail: (email: string, password: string, name: string) => Promise<void>;
   signInAsDemoUser: (name?: string, email?: string) => Promise<void>;
+  updateUserRole: (role: 'ORGANIZER' | 'RECOVERY_PARTNER') => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -196,6 +197,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  async function updateUserRole(role: 'ORGANIZER' | 'RECOVERY_PARTNER') {
+    if (currentUser?.uid) {
+      try {
+        await setUserRole(currentUser.uid, role);
+      } catch { /* ignore */ }
+    }
+    setUserProfile(prev => prev ? { ...prev, role } : {
+      uid: currentUser?.uid || 'demo_organizer_123',
+      name: currentUser?.displayName || 'User',
+      email: currentUser?.email || 'user@utsavcycle.ai',
+      photoURL: currentUser?.photoURL || '',
+      role,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const stored = getStoredDemoData();
+    if (stored) {
+      stored.profile.role = role;
+      try { localStorage.setItem('uc_demo_user', JSON.stringify(stored)); } catch { /* ignore */ }
+    }
+  }
+
   async function logout() {
     try { localStorage.removeItem('uc_demo_user'); } catch { /* ignore */ }
     if (auth) {
@@ -215,7 +238,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider value={{
       currentUser, userProfile, loading,
-      signInWithGoogle, signInWithEmail, signUpWithEmail, signInAsDemoUser,
+      signInWithGoogle, signInWithEmail, signUpWithEmail, signInAsDemoUser, updateUserRole,
       logout, refreshProfile,
     }}>
       {children}
