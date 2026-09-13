@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+server/node_modules/
+
+# Environment files (NEVER commit real secrets)
+.env
+server/.env
+.env.local
+.env.production
+
+# Build output
+dist/
+build/
+
+# Firebase service account (NEVER commit)
+*-service-account.json
+serviceAccountKey.json
+firebase-adminsdk*.json
+
+# Editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# TypeScript
+*.tsbuildinfo

@@ -1,0 +1,31 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* color-scheme is set by JS in ThemeContext — do NOT set it here */
+  }
+
+  body {
+    @apply font-sans bg-[#f8faf5] text-[#1f2328] dark:bg-[#0d1510] dark:text-gray-100 transition-colors duration-200;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-[#1a6b2f] ring-offset-2;
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar { display: none; }
+}
