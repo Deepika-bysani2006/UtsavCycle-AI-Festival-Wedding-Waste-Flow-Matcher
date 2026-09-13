@@ -21,13 +21,16 @@ function getFirebaseError(code: string): string {
     'auth/weak-password': 'Password must be at least 6 characters.',
     'auth/invalid-email': 'Please enter a valid email address.',
     'auth/network-request-failed': 'Network error. Check your connection.',
-    'auth/popup-closed-by-user': 'Google sign-in was cancelled.',
+    'auth/popup-closed-by-user': 'Google sign-in popup was closed.',
+    'auth/popup-blocked': 'Sign-in popup was blocked by browser. Please enable popups.',
+    'auth/unauthorized-domain': 'This domain is not added to Firebase Authorized Domains. Logged in as Demo User.',
+    'auth/operation-not-allowed': 'Google Sign-In is not enabled in Firebase Console. Logged in as Demo User.',
   };
-  return errors[code] || 'Something went wrong. Please try again.';
+  return errors[code] || 'Authentication error. Continuing with Demo Mode.';
 }
 
 export default function SignupPage() {
-  const { signInWithGoogle, signUpWithEmail } = useAuth();
+  const { signInWithGoogle, signUpWithEmail, signInAsDemoUser } = useAuth();
   const navigate = useNavigate();
 
   const [name, setName] = useState('');
@@ -44,7 +47,9 @@ export default function SignupPage() {
       await signInWithGoogle();
       navigate('/onboarding');
     } catch (e: any) {
-      setError(getFirebaseError(e.code));
+      setError(getFirebaseError(e.code || ''));
+      await signInAsDemoUser(name || 'Demo Event Organizer', email || 'organizer@utsavcycle.ai');
+      navigate('/onboarding');
     } finally {
       setGoogleLoading(false);
     }

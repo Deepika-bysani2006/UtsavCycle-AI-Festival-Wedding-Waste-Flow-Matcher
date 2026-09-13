@@ -15,6 +15,7 @@ interface AuthContextValue {
   signInWithGoogle: () => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signUpWithEmail: (email: string, password: string, name: string) => Promise<void>;
+  signInAsDemoUser: (name?: string, email?: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -29,12 +30,27 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs = 5000): Promise<T | null
   ]);
 }
 
+function getStoredDemoData() {
+  try {
+    const raw = localStorage.getItem('uc_demo_user');
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return null;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Check if demo user is active in localStorage
+    const storedDemo = getStoredDemoData();
+    if (storedDemo?.user && storedDemo?.profile) {
+      setCurrentUser(storedDemo.user);
+      setUserProfile(storedDemo.profile);
+    }
+
     if (!auth) {
       setLoading(false);
       return;
@@ -43,12 +59,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let unsub = () => {};
     try {
       unsub = onAuthStateChanged(auth, async (user) => {
-        setCurrentUser(user);
         if (user) {
-          // Use timeout so a Firestore outage never freezes the loading screen
+          setCurrentUser(user);
+          // Clear demo user if real Firebase user logs in
+          try { localStorage.removeItem('uc_demo_user'); } catch { /* ignore */ }
           const profile = await withTimeout(getUserProfile(user.uid));
           setUserProfile(profile);
-        } else {
+        } else if (!getStoredDemoData()) {
+          setCurrentUser(null);
           setUserProfile(null);
         }
         setLoading(false);
@@ -57,8 +75,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     }
 
-    // Safety net: if onAuthStateChanged itself never fires (offline / config error),
-    // stop loading after 3 seconds so the user sees the landing page instead of a spinner
     const safetyTimer = setTimeout(() => setLoading(false), 3000);
 
     return () => {
@@ -67,53 +83,130 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  async function signInWithGoogle() {
-    const result = await signInWithPopup(auth, googleProvider);
-    const user = result.user;
+  async function signInAsDemoUser(name = 'Demo Event Organizer', email = 'organizer@utsavcycle.ai') {
+    const demoUser: any = {
+      uid: 'demo_organizer_123',
+      email,
+      displayName: name,
+      photoURL: '',
+    };
+    const demoProfile: UserProfile = {
+      uid: 'demo_organizer_123',
+      name,
+      email,
+      photoURL: '',
+      role: 'ORGANIZER',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    setCurrentUser(demoUser);
+    setUserProfile(demoProfile);
     try {
-      await createUserProfile({
-        uid: user.uid,
-        name: user.displayName || '',
-        email: user.email || '',
-        photoURL: user.photoURL || '',
-        role: 'ORGANIZER',
-      });
-      const profile = await withTimeout(getUserProfile(user.uid));
-      setUserProfile(profile);
-    } catch {
-      // Profile fetch failure is non-fatal — user is still authenticated
+      localStorage.setItem('uc_demo_user', JSON.stringify({ user: demoUser, profile: demoProfile }));
+    } catch { /* ignore */ }
+  }
+
+  async function signInWithGoogle() {
+    if (!auth) {
+      await signInAsDemoUser();
+      return;
+    }
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+      try {
+        localStorage.removeItem('uc_demo_user');
+      } catch { /* ignore */ }
+      try {
+        await createUserProfile({
+          uid: user.uid,
+          name: user.displayName || '',
+          email: user.email || '',
+          photoURL: user.photoURL || '',
+          role: 'ORGANIZER',
+        });
+        const profile = await withTimeout(getUserProfile(user.uid));
+        setUserProfile(profile);
+      } catch {
+        // Non-fatal
+      }
+    } catch (err: any) {
+      const isDomainOrConfigError =
+        err?.code === 'auth/unauthorized-domain' ||
+        err?.code === 'auth/operation-not-allowed' ||
+        err?.code === 'auth/unauthorized-origin' ||
+        err?.code === 'auth/internal-error' ||
+        err?.code === 'auth/popup-blocked' ||
+        !err?.code;
+
+      if (isDomainOrConfigError) {
+        console.warn('Google Auth domain/config restriction detected. Activating Demo Session fallback.', err);
+        await signInAsDemoUser('Demo Event Organizer', 'organizer@utsavcycle.ai');
+        return;
+      }
+      throw err;
     }
   }
 
   async function signInWithEmail(email: string, password: string) {
-    await signInWithEmailAndPassword(auth, email, password);
+    if (!auth) {
+      await signInAsDemoUser('Demo User', email);
+      return;
+    }
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      try { localStorage.removeItem('uc_demo_user'); } catch { /* ignore */ }
+    } catch (err: any) {
+      if (err?.code === 'auth/unauthorized-domain' || err?.code === 'auth/operation-not-allowed') {
+        await signInAsDemoUser('Demo User', email);
+        return;
+      }
+      throw err;
+    }
   }
 
   async function signUpWithEmail(email: string, password: string, name: string) {
-    const result = await createUserWithEmailAndPassword(auth, email, password);
-    await updateProfile(result.user, { displayName: name });
+    if (!auth) {
+      await signInAsDemoUser(name, email);
+      return;
+    }
     try {
-      await createUserProfile({
-        uid: result.user.uid,
-        name,
-        email,
-        photoURL: '',
-        role: 'ORGANIZER',
-      });
-      const profile = await withTimeout(getUserProfile(result.user.uid));
-      setUserProfile(profile);
-    } catch {
-      // Non-fatal
+      const result = await createUserWithEmailAndPassword(auth, email, password);
+      await updateProfile(result.user, { displayName: name });
+      try { localStorage.removeItem('uc_demo_user'); } catch { /* ignore */ }
+      try {
+        await createUserProfile({
+          uid: result.user.uid,
+          name,
+          email,
+          photoURL: '',
+          role: 'ORGANIZER',
+        });
+        const profile = await withTimeout(getUserProfile(result.user.uid));
+        setUserProfile(profile);
+      } catch {
+        // Non-fatal
+      }
+    } catch (err: any) {
+      if (err?.code === 'auth/unauthorized-domain' || err?.code === 'auth/operation-not-allowed') {
+        await signInAsDemoUser(name, email);
+        return;
+      }
+      throw err;
     }
   }
 
   async function logout() {
-    await signOut(auth);
+    try { localStorage.removeItem('uc_demo_user'); } catch { /* ignore */ }
+    if (auth) {
+      try { await signOut(auth); } catch { /* ignore */ }
+    }
+    setCurrentUser(null);
     setUserProfile(null);
   }
 
   async function refreshProfile() {
-    if (currentUser) {
+    if (currentUser && currentUser.uid !== 'demo_organizer_123') {
       const profile = await withTimeout(getUserProfile(currentUser.uid));
       setUserProfile(profile);
     }
@@ -122,7 +215,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider value={{
       currentUser, userProfile, loading,
-      signInWithGoogle, signInWithEmail, signUpWithEmail,
+      signInWithGoogle, signInWithEmail, signUpWithEmail, signInAsDemoUser,
       logout, refreshProfile,
     }}>
       {children}

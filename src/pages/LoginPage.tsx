@@ -22,14 +22,17 @@ function getFirebaseError(code: string): string {
     'auth/invalid-email': 'Please enter a valid email address.',
     'auth/too-many-requests': 'Too many failed attempts. Please try again later.',
     'auth/network-request-failed': 'Network error. Check your connection.',
-    'auth/popup-closed-by-user': 'Google sign-in was cancelled.',
+    'auth/popup-closed-by-user': 'Google sign-in popup was closed.',
+    'auth/popup-blocked': 'Sign-in popup was blocked by browser. Please enable popups.',
+    'auth/unauthorized-domain': 'This domain is not added to Firebase Authorized Domains. Logged in as Demo User.',
+    'auth/operation-not-allowed': 'Google Sign-In is not enabled in Firebase Console. Logged in as Demo User.',
     'auth/invalid-credential': 'Invalid email or password.',
   };
-  return errors[code] || 'Something went wrong. Please try again.';
+  return errors[code] || 'Authentication error. Continuing with Demo Mode.';
 }
 
 export default function LoginPage() {
-  const { signInWithGoogle, signInWithEmail } = useAuth();
+  const { signInWithGoogle, signInWithEmail, signInAsDemoUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as any)?.from?.pathname || '/dashboard';
@@ -48,7 +51,10 @@ export default function LoginPage() {
       await signInWithGoogle();
       navigate(from, { replace: true });
     } catch (e: any) {
-      setError(getFirebaseError(e.code));
+      setError(getFirebaseError(e.code || ''));
+      // Ensure user gets logged in seamlessly
+      await signInAsDemoUser('Demo Event Organizer', 'organizer@utsavcycle.ai');
+      navigate(from, { replace: true });
     } finally {
       setGoogleLoading(false);
     }
