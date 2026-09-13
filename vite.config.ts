@@ -7,7 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['utsavcycle-logo.png', 'favicon.ico'],
+      includeAssets: ['utsavcycle-logo.png', 'pwa-192x192.png', 'pwa-512x512.png', 'apple-touch-icon.png', 'favicon.png'],
       manifest: {
         name: 'UtsavCycle AI',
         short_name: 'UtsavCycle',
@@ -20,8 +20,14 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            src: '/utsavcycle-logo.png',
+            src: '/pwa-192x192.png',
             sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any maskable',
+          },
+          {
+            src: '/pwa-512x512.png',
+            sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable',
           },
@@ -29,7 +35,7 @@ export default defineConfig({
             src: '/utsavcycle-logo.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable',
+            purpose: 'any',
           },
         ],
         categories: ['productivity', 'utilities', 'lifestyle'],
