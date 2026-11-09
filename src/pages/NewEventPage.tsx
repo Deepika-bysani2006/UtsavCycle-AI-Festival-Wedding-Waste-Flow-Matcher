@@ -6,6 +6,7 @@ import { Input, Select } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
 import { useAuth } from '../contexts/AuthContext';
 import { createEvent } from '../lib/firestore';
+import { syncEventToMongoDB } from '../lib/api';
 import { AlertCircle } from 'lucide-react';
 
 const eventTypes = [
@@ -90,6 +91,9 @@ export default function NewEventPage() {
       organizerUid: currentUser.uid,
       status: 'DRAFT' as const,
     };
+
+    // Save event to MongoDB Atlas immediately
+    syncEventToMongoDB(eventData);
 
     try {
       // Try Firestore first

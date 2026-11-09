@@ -24,8 +24,7 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-/** Resolves with value or null after timeoutMs — never hangs the app */
-function withTimeout<T>(promise: Promise<T>, timeoutMs = 5000): Promise<T | null> {
+function withTimeout<T>(promise: Promise<T>, timeoutMs = 4000): Promise<T | null> {
   return Promise.race([
     promise.catch(() => null),
     new Promise<null>(resolve => setTimeout(() => resolve(null), timeoutMs)),
@@ -46,44 +45,152 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check if demo user is active in localStorage
-    const storedDemo = getStoredDemoData();
-    if (storedDemo?.user && storedDemo?.profile) {
-      setCurrentUser(storedDemo.user);
-      setUserProfile(storedDemo.profile);
-    }
-
-    if (!auth) {
-      setLoading(false);
-      return;
-    }
-
     let unsub = () => {};
-    try {
-      unsub = onAuthStateChanged(auth, async (user) => {
-        if (user) {
-          setCurrentUser(user);
-          // Clear demo user if real Firebase user logs in
-          try { localStorage.removeItem('uc_demo_user'); } catch { /* ignore */ }
-          const profile = await withTimeout(getUserProfile(user.uid));
-          setUserProfile(profile);
-        } else if (!getStoredDemoData()) {
-          setCurrentUser(null);
-          setUserProfile(null);
-        }
+
+    if (auth) {
+      try {
+        unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+          if (firebaseUser) {
+            // Real authenticated Google / Firebase user
+            try { localStorage.removeItem('uc_demo_user'); } catch { /* ignore */ }
+            setCurrentUser(firebaseUser);
+
+            const profile = await withTimeout(getUserProfile(firebaseUser.uid));
+            if (profile) {
+              setUserProfile(profile);
+              syncUserToMongoDB(profile);
+            } else {
+              const freshProfile: UserProfile = {
+                uid: firebaseUser.uid,
+                name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+                email: firebaseUser.email || '',
+                photoURL: firebaseUser.photoURL || '',
+                role: 'ORGANIZER',
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              };
+              setUserProfile(freshProfile);
+              syncUserToMongoDB(freshProfile);
+            }
+          } else {
+            // Check if user explicitly chose Demo User
+            const storedDemo = getStoredDemoData();
+            if (storedDemo?.user && storedDemo?.profile) {
+              setCurrentUser(storedDemo.user);
+              setUserProfile(storedDemo.profile);
+            } else {
+              setCurrentUser(null);
+              setUserProfile(null);
+            }
+          }
+          setLoading(false);
+        });
+      } catch (err) {
+        console.warn('onAuthStateChanged error:', err);
         setLoading(false);
-      });
-    } catch {
+      }
+    } else {
+      const storedDemo = getStoredDemoData();
+      if (storedDemo?.user && storedDemo?.profile) {
+        setCurrentUser(storedDemo.user);
+        setUserProfile(storedDemo.profile);
+      }
       setLoading(false);
     }
 
-    const safetyTimer = setTimeout(() => setLoading(false), 3000);
+    const safetyTimer = setTimeout(() => setLoading(false), 2500);
 
     return () => {
       try { unsub(); } catch { /* ignore */ }
       clearTimeout(safetyTimer);
     };
   }, []);
+
+  async function signInWithGoogle(role: 'ORGANIZER' | 'RECOVERY_PARTNER' = 'ORGANIZER') {
+    // Clear any previous demo state
+    try { localStorage.removeItem('uc_demo_user'); } catch { /* ignore */ }
+
+    const result = await signInWithPopup(auth, googleProvider);
+    const user = result.user;
+
+    // Build real user profile using real Google account data
+    const realProfile: UserProfile = {
+      uid: user.uid,
+      name: user.displayName || user.email?.split('@')[0] || 'User',
+      email: user.email || '',
+      photoURL: user.photoURL || '',
+      role,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    // Immediately set real user in React context
+    setCurrentUser(user);
+    setUserProfile(realProfile);
+
+    // Sync to MongoDB Atlas database
+    syncUserToMongoDB(realProfile);
+
+    // Save to Firestore
+    try {
+      await createUserProfile(realProfile);
+      await setUserRole(user.uid, role);
+    } catch (e) {
+      console.warn('Firestore profile sync warning:', e);
+    }
+  }
+
+  async function signInWithEmail(email: string, password: string, role?: 'ORGANIZER' | 'RECOVERY_PARTNER') {
+    try { localStorage.removeItem('uc_demo_user'); } catch { /* ignore */ }
+    const result = await signInWithEmailAndPassword(auth, email, password);
+    const user = result.user;
+    setCurrentUser(user);
+    const profile = await withTimeout(getUserProfile(user.uid));
+    if (profile) {
+      if (role && profile.role !== role) {
+        await updateUserRole(role);
+      } else {
+        setUserProfile(profile);
+        syncUserToMongoDB(profile);
+      }
+    } else {
+      const fresh: UserProfile = {
+        uid: user.uid,
+        name: user.displayName || email.split('@')[0],
+        email,
+        photoURL: '',
+        role: role || 'ORGANIZER',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      setUserProfile(fresh);
+      syncUserToMongoDB(fresh);
+    }
+  }
+
+  async function signUpWithEmail(email: string, password: string, name: string, role: 'ORGANIZER' | 'RECOVERY_PARTNER' = 'ORGANIZER') {
+    try { localStorage.removeItem('uc_demo_user'); } catch { /* ignore */ }
+    const result = await createUserWithEmailAndPassword(auth, email, password);
+    await updateProfile(result.user, { displayName: name });
+    const user = result.user;
+    const freshProfile: UserProfile = {
+      uid: user.uid,
+      name,
+      email,
+      photoURL: '',
+      role,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    setCurrentUser(user);
+    setUserProfile(freshProfile);
+    syncUserToMongoDB(freshProfile);
+    try {
+      await createUserProfile(freshProfile);
+    } catch (e) {
+      console.warn('Firestore profile creation warning:', e);
+    }
+  }
 
   async function signInAsDemoUser(
     name = 'Demo User',
@@ -117,119 +224,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch { /* ignore */ }
   }
 
-  async function signInWithGoogle(role: 'ORGANIZER' | 'RECOVERY_PARTNER' = 'ORGANIZER') {
-    const result = await signInWithPopup(auth, googleProvider);
-    const user = result.user;
-    try {
-      localStorage.removeItem('uc_demo_user');
-    } catch { /* ignore */ }
-    const profData = {
-      uid: user.uid,
-      name: user.displayName || user.email?.split('@')[0] || 'User',
-      email: user.email || '',
-      photoURL: user.photoURL || '',
-      role,
-    };
-    try {
-      await createUserProfile(profData);
-    } catch (e) {
-      console.warn('createUserProfile firestore warning:', e);
-    }
-    syncUserToMongoDB({ ...profData, createdAt: new Date(), updatedAt: new Date() });
-    const profile = await withTimeout(getUserProfile(user.uid));
-    if (profile) {
-      if (!profile.role || profile.role !== role) {
-        await updateUserRole(role);
-      } else {
-        setUserProfile(profile);
-      }
-    } else {
-      await updateUserRole(role);
-    }
-  }
-
-  async function signInWithEmail(email: string, password: string, role?: 'ORGANIZER' | 'RECOVERY_PARTNER') {
-    if (!auth) {
-      await signInAsDemoUser('Demo User', email, role || 'ORGANIZER');
-      return;
-    }
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-      try { localStorage.removeItem('uc_demo_user'); } catch { /* ignore */ }
-      if (role) {
-        await updateUserRole(role);
-      }
-    } catch (err: any) {
-      if (err?.code === 'auth/unauthorized-domain' || err?.code === 'auth/operation-not-allowed') {
-        await signInAsDemoUser('Demo User', email, role || 'ORGANIZER');
-        return;
-      }
-      throw err;
-    }
-  }
-
-  async function signUpWithEmail(email: string, password: string, name: string, role: 'ORGANIZER' | 'RECOVERY_PARTNER' = 'ORGANIZER') {
-    if (!auth) {
-      await signInAsDemoUser(name, email, role);
-      return;
-    }
-    try {
-      const result = await createUserWithEmailAndPassword(auth, email, password);
-      await updateProfile(result.user, { displayName: name });
-      try { localStorage.removeItem('uc_demo_user'); } catch { /* ignore */ }
-      try {
-        const profData = {
-          uid: result.user.uid,
-          name,
-          email,
-          photoURL: '',
-          role,
-        };
-        await createUserProfile(profData);
-        syncUserToMongoDB({ ...profData, createdAt: new Date(), updatedAt: new Date() });
-        const profile = await withTimeout(getUserProfile(result.user.uid));
-        setUserProfile(profile || {
-          uid: result.user.uid,
-          name,
-          email,
-          photoURL: '',
-          role,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-      } catch {
-        await updateUserRole(role);
-      }
-    } catch (err: any) {
-      if (err?.code === 'auth/unauthorized-domain' || err?.code === 'auth/operation-not-allowed') {
-        await signInAsDemoUser(name, email, role);
-        return;
-      }
-      throw err;
-    }
-  }
-
   async function updateUserRole(role: 'ORGANIZER' | 'RECOVERY_PARTNER') {
-    if (currentUser?.uid) {
-      try {
-        await setUserRole(currentUser.uid, role);
-      } catch { /* ignore */ }
-    }
+    if (!currentUser) return;
+
     const updatedProfile: UserProfile = {
-      uid: currentUser?.uid || 'demo_organizer_123',
-      name: currentUser?.displayName || 'User',
-      email: currentUser?.email || 'user@utsavcycle.ai',
-      photoURL: currentUser?.photoURL || '',
+      uid: currentUser.uid,
+      name: userProfile?.name || currentUser.displayName || currentUser.email?.split('@')[0] || 'User',
+      email: userProfile?.email || currentUser.email || '',
+      photoURL: userProfile?.photoURL || currentUser.photoURL || '',
       role,
-      createdAt: new Date(),
+      createdAt: userProfile?.createdAt || new Date(),
       updatedAt: new Date(),
     };
-    setUserProfile(prev => prev ? { ...prev, role } : updatedProfile);
+
+    setUserProfile(updatedProfile);
     syncUserToMongoDB(updatedProfile);
-    const stored = getStoredDemoData();
-    if (stored) {
-      stored.profile.role = role;
-      try { localStorage.setItem('uc_demo_user', JSON.stringify(stored)); } catch { /* ignore */ }
+
+    if (!currentUser.uid.startsWith('demo')) {
+      try {
+        await setUserRole(currentUser.uid, role);
+      } catch (e) {
+        console.warn('setUserRole warning:', e);
+      }
+    } else {
+      try {
+        localStorage.setItem('uc_demo_user', JSON.stringify({ user: currentUser, profile: updatedProfile }));
+      } catch { /* ignore */ }
     }
   }
 
@@ -243,17 +263,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function refreshProfile() {
-    if (currentUser && currentUser.uid !== 'demo_organizer_123') {
+    if (currentUser && !currentUser.uid.startsWith('demo')) {
       const profile = await withTimeout(getUserProfile(currentUser.uid));
-      setUserProfile(profile);
+      if (profile) {
+        setUserProfile(profile);
+        syncUserToMongoDB(profile);
+      }
     }
   }
 
   return (
     <AuthContext.Provider value={{
-      currentUser, userProfile, loading,
-      signInWithGoogle, signInWithEmail, signUpWithEmail, signInAsDemoUser, updateUserRole,
-      logout, refreshProfile,
+      currentUser,
+      userProfile,
+      loading,
+      signInWithGoogle,
+      signInWithEmail,
+      signUpWithEmail,
+      signInAsDemoUser,
+      updateUserRole,
+      logout,
+      refreshProfile,
     }}>
       {children}
     </AuthContext.Provider>

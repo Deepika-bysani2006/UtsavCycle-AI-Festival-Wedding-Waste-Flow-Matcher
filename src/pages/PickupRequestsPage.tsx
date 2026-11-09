@@ -6,6 +6,7 @@ import { StatusBadge } from '../components/ui/Badge';
 import { Truck, Plus, CheckCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getPickupRequestsByOrganizer, createPickupRequest } from '../lib/firestore';
+import { syncPickupToMongoDB } from '../lib/api';
 import type { PickupRequest } from '../types';
 
 const LS_KEY = 'uc_pickups';
@@ -78,6 +79,9 @@ export default function PickupRequestsPage() {
       status: 'PENDING' as const,
       notes: form.notes,
     };
+
+    // Sync pickup to MongoDB Atlas immediately
+    syncPickupToMongoDB(pickupData);
 
     try {
       const id = await createPickupRequest(pickupData);

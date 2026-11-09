@@ -5,6 +5,7 @@ import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { MapPin, Truck, CheckCircle, Info } from 'lucide-react';
 import { createPickupRequest } from '../lib/firestore';
+import { syncPickupToMongoDB } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 
 // Demo partners — clearly marked
@@ -93,6 +94,9 @@ export default function PartnerMatchingPage() {
       status: 'PENDING' as const,
       notes: `Matched with ${partner?.orgName} (demo)`,
     };
+    // Sync pickup to MongoDB Atlas immediately
+    syncPickupToMongoDB(requestData);
+
     try {
       await createPickupRequest(requestData);
       setRequested(partnerId);
