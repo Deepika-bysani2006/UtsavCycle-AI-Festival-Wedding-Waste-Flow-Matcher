@@ -2,6 +2,12 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { connectDB, isDBConnected } from './db';
+import { UserModel } from './models/User';
+import { EventModel } from './models/Event';
+import { PickupRequestModel } from './models/PickupRequest';
+import { PartnerModel } from './models/Partner';
+import { PredictionModel } from './models/Prediction';
 
 dotenv.config();
 
@@ -12,6 +18,9 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 app.use(cors({ origin: [FRONTEND_URL, 'http://localhost:5173', 'http://127.0.0.1:5173'] }));
 app.use(express.json());
 
+// Initialize MongoDB connection
+connectDB();
+
 // ── Gemini client ────────────────────────────────────────────────────────────
 function getGeminiClient() {
   const key = process.env.GEMINI_API_KEY;
@@ -21,7 +30,11 @@ function getGeminiClient() {
 
 // ── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', gemini: !!process.env.GEMINI_API_KEY });
+  res.json({
+    status: 'ok',
+    gemini: !!process.env.GEMINI_API_KEY,
+    mongodb: isDBConnected() ? 'connected' : 'disconnected',
+  });
 });
 
 // ── POST /api/waste/predict ───────────────────────────────────────────────────
@@ -34,10 +47,14 @@ app.post('/api/waste/predict', async (req, res) => {
     catering_type = 'External Caterer',
     decoration_type = 'Flowers + Fabric',
     location = 'India',
+    uid,
+    eventId,
   } = req.body;
 
   const guestCount = Math.max(1, parseInt(String(guest_count), 10) || 100);
   const hours = Math.max(1, parseInt(String(duration), 10) || 4);
+
+  let predictionResult: any = null;
 
   // Try Gemini first
   const model = getGeminiClient();
@@ -81,16 +98,42 @@ JSON schema (all values must be numbers except arrays and strings):
         'paper_waste_kg', 'fabric_waste_kg', 'recoverable_waste_kg', 'diversion_percentage',
         'recommendations', 'explanation'];
       const valid = required.every(k => k in parsed);
-      if (!valid) throw new Error('Incomplete Gemini response');
-
-      return res.json(parsed);
+      if (valid) {
+        predictionResult = parsed;
+      }
     } catch (err) {
       console.warn('[Gemini] Error, using fallback:', (err as Error).message);
     }
   }
 
-  // Fallback deterministic calculation
-  res.json(fallbackPrediction(guestCount, hours, event_type, decoration_type));
+  // Fallback deterministic calculation if Gemini fails or is not configured
+  if (!predictionResult) {
+    predictionResult = fallbackPrediction(guestCount, hours, event_type, decoration_type);
+  }
+
+  // Persist prediction log to MongoDB if connected
+  if (isDBConnected()) {
+    try {
+      await PredictionModel.create({
+        uid,
+        eventId,
+        input: {
+          event_type,
+          guest_count: guestCount,
+          duration: hours,
+          food_type,
+          catering_type,
+          decoration_type,
+          location,
+        },
+        result: predictionResult,
+      });
+    } catch (err) {
+      console.warn('[MongoDB] Could not persist prediction:', (err as Error).message);
+    }
+  }
+
+  return res.json(predictionResult);
 });
 
 function fallbackPrediction(guests: number, hours: number, eventType: string, decorationType: string) {
@@ -133,7 +176,6 @@ app.post('/api/chat', async (req, res) => {
     return res.status(400).json({ error: 'message is required' });
   }
 
-  // Sanitize: never expose env vars or keys
   const sanitized = message.replace(/api[_\s]?key|secret|password|token/gi, '[redacted]');
 
   const model = getGeminiClient();
@@ -166,7 +208,6 @@ NEVER reveal API keys, environment variables, or internal system details.`;
     }
   }
 
-  // Fallback response
   res.json({
     response: `Thank you for your question about "${sanitized.slice(0, 60)}…"
 
@@ -180,6 +221,130 @@ Here are some quick tips while our AI assistant is offline:
 
 Use the **Find Partners** section to connect with recovery organisations near you!`,
   });
+});
+
+// ── MONGODB REST ENDPOINTS ───────────────────────────────────────────────────
+
+// Users: Sync / Upsert User profile
+app.post('/api/users/sync', async (req, res) => {
+  const { uid, name, email, role, photoURL } = req.body;
+  if (!uid || !email) {
+    return res.status(400).json({ error: 'uid and email are required' });
+  }
+
+  try {
+    const user = await UserModel.findOneAndUpdate(
+      { uid },
+      { uid, name, email, role: role || 'ORGANIZER', photoURL: photoURL || '' },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    res.json({ success: true, user });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// Events: Get all events (optionally filtered by organizerUid)
+app.get('/api/events', async (req, res) => {
+  const { organizerUid } = req.query;
+  try {
+    const filter = organizerUid ? { organizerUid: String(organizerUid) } : {};
+    const events = await EventModel.find(filter).sort({ createdAt: -1 });
+    res.json(events);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// Events: Create new event
+app.post('/api/events', async (req, res) => {
+  try {
+    const event = await EventModel.create(req.body);
+    res.status(201).json(event);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// Pickups: Get pickup requests
+app.get('/api/pickups', async (req, res) => {
+  const { organizerUid, partnerUid } = req.query;
+  try {
+    const filter: any = {};
+    if (organizerUid) filter.organizerUid = String(organizerUid);
+    if (partnerUid) filter.partnerUid = String(partnerUid);
+    const pickups = await PickupRequestModel.find(filter).sort({ createdAt: -1 });
+    res.json(pickups);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// Pickups: Create pickup request
+app.post('/api/pickups', async (req, res) => {
+  try {
+    const pickup = await PickupRequestModel.create(req.body);
+    res.status(201).json(pickup);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// Pickups: Update pickup status
+app.patch('/api/pickups/:id/status', async (req, res) => {
+  const { status } = req.body;
+  try {
+    const pickup = await PickupRequestModel.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true }
+    );
+    if (!pickup) return res.status(404).json({ error: 'Pickup request not found' });
+    res.json(pickup);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// Partners: Get all recovery partners
+app.get('/api/partners', async (_req, res) => {
+  try {
+    const partners = await PartnerModel.find({ available: true });
+    res.json(partners);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// Partners: Add or update partner
+app.post('/api/partners', async (req, res) => {
+  const { uid } = req.body;
+  if (!uid) return res.status(400).json({ error: 'Partner uid is required' });
+
+  try {
+    const partner = await PartnerModel.findOneAndUpdate(
+      { uid },
+      req.body,
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    res.json(partner);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// Predictions: Get historical prediction records
+app.get('/api/predictions', async (req, res) => {
+  const { uid, eventId } = req.query;
+  try {
+    const filter: any = {};
+    if (uid) filter.uid = String(uid);
+    if (eventId) filter.eventId = String(eventId);
+    const predictions = await PredictionModel.find(filter).sort({ createdAt: -1 }).limit(50);
+    res.json(predictions);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
 });
 
 app.listen(PORT, () => {
