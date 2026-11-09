@@ -6,6 +6,7 @@ import {
 } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
 import { createUserProfile, getUserProfile, setUserRole } from '../lib/firestore';
+import { syncUserToMongoDB } from '../lib/api';
 import type { UserProfile } from '../types';
 
 interface AuthContextValue {
@@ -110,6 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
     setCurrentUser(demoUser);
     setUserProfile(demoProfile);
+    syncUserToMongoDB(demoProfile);
     try {
       localStorage.setItem('uc_demo_user', JSON.stringify({ user: demoUser, profile: demoProfile }));
     } catch { /* ignore */ }
@@ -131,13 +133,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.removeItem('uc_demo_user');
       } catch { /* ignore */ }
       try {
-        await createUserProfile({
+        const profData = {
           uid: user.uid,
           name: user.displayName || '',
           email: user.email || '',
           photoURL: user.photoURL || '',
           role,
-        });
+        };
+        await createUserProfile(profData);
+        syncUserToMongoDB({ ...profData, createdAt: new Date(), updatedAt: new Date() });
         const profile = await withTimeout(getUserProfile(user.uid));
         if (profile) {
           if (!profile.role || profile.role !== role) {
@@ -203,13 +207,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await updateProfile(result.user, { displayName: name });
       try { localStorage.removeItem('uc_demo_user'); } catch { /* ignore */ }
       try {
-        await createUserProfile({
+        const profData = {
           uid: result.user.uid,
           name,
           email,
           photoURL: '',
           role,
-        });
+        };
+        await createUserProfile(profData);
+        syncUserToMongoDB({ ...profData, createdAt: new Date(), updatedAt: new Date() });
         const profile = await withTimeout(getUserProfile(result.user.uid));
         setUserProfile(profile || {
           uid: result.user.uid,
@@ -238,7 +244,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await setUserRole(currentUser.uid, role);
       } catch { /* ignore */ }
     }
-    setUserProfile(prev => prev ? { ...prev, role } : {
+    const updatedProfile: UserProfile = {
       uid: currentUser?.uid || 'demo_organizer_123',
       name: currentUser?.displayName || 'User',
       email: currentUser?.email || 'user@utsavcycle.ai',
@@ -246,7 +252,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       role,
       createdAt: new Date(),
       updatedAt: new Date(),
-    });
+    };
+    setUserProfile(prev => prev ? { ...prev, role } : updatedProfile);
+    syncUserToMongoDB(updatedProfile);
     const stored = getStoredDemoData();
     if (stored) {
       stored.profile.role = role;

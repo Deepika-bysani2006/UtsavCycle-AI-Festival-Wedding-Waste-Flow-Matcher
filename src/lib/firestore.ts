@@ -4,6 +4,7 @@ import {
   serverTimestamp, limit,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { syncEventToMongoDB, syncPickupToMongoDB, updatePickupStatusInMongoDB } from './api';
 import type { UserProfile, Event, PickupRequest, WastePrediction, ImpactRecord, Notification } from '../types';
 
 // ─── Users ────────────────────────────────────────────────────────────────────
@@ -42,6 +43,7 @@ export async function setUserRole(uid: string, role: 'ORGANIZER' | 'RECOVERY_PAR
 // ─── Events ───────────────────────────────────────────────────────────────────
 
 export async function createEvent(event: Omit<Event, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+  syncEventToMongoDB(event);
   const ref = await addDoc(collection(db, 'events'), {
     ...event,
     createdAt: serverTimestamp(),
@@ -107,6 +109,7 @@ export async function upsertRecoveryPartner(uid: string, data: any): Promise<voi
 // ─── Pickup Requests ──────────────────────────────────────────────────────────
 
 export async function createPickupRequest(req: Omit<PickupRequest, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+  syncPickupToMongoDB(req);
   const ref = await addDoc(collection(db, 'pickup_requests'), {
     ...req,
     status: 'PENDING',
@@ -144,6 +147,7 @@ export async function getPickupRequestsByPartner(uid: string): Promise<PickupReq
 }
 
 export async function updatePickupStatus(requestId: string, status: string, changedBy: string): Promise<void> {
+  updatePickupStatusInMongoDB(requestId, status);
   await updateDoc(doc(db, 'pickup_requests', requestId), {
     status,
     updatedAt: serverTimestamp(),

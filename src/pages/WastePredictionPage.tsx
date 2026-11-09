@@ -8,7 +8,9 @@ import { saveWastePrediction } from '../lib/firestore';
 import { Leaf, AlertCircle, CheckCircle, TrendingUp } from 'lucide-react';
 import type { WastePredictionResult } from '../types';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+import { getApiBaseUrl } from '../lib/api';
+
+const API_URL = getApiBaseUrl();
 
 interface PredictionForm {
   event_type: string;
@@ -55,6 +57,7 @@ export default function WastePredictionPage() {
           ...form,
           guest_count: parseInt(form.guest_count) || 100,
           duration: parseInt(form.duration) || 4,
+          uid: currentUser?.uid,
         }),
       });
       if (!res.ok) throw new Error('Prediction failed');

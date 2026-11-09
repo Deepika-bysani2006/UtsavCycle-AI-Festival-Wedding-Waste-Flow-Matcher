@@ -8,7 +8,9 @@ import { saveChatMessage, createChatSession } from '../lib/firestore';
 import type { ChatMessage } from '../types';
 import { clsx } from 'clsx';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+import { getApiBaseUrl } from '../lib/api';
+
+const API_URL = getApiBaseUrl();
 
 function getBuiltInAnswer(q: string): string {
   const t = q.toLowerCase();
