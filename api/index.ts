@@ -1,21 +1,12 @@
 import express from 'express';
 import cors from 'cors';
 import mongoose, { Schema, model } from 'mongoose';
-import dns from 'dns';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // Base64-encoded Atlas URI to prevent false-positive regex alerts during static scans
 const FALLBACK_B64 = 'bW9uZ29kYitzcnY6Ly91dHNhdl9hZG1pbjp1dHNhdjEyM0BjbHVzdGVyMC5ta3JsbGdyLm1vbmdvZGIubmV0L3V0c2F2Y3ljbGU/cmV0cnlXcml0ZXM9dHJ1ZSZ3PW1ham9yaXR5';
 const MONGODB_URI =
   process.env.MONGODB_URI ||
   (typeof Buffer !== 'undefined' ? Buffer.from(FALLBACK_B64, 'base64').toString('utf8') : '');
-
-// Safe DNS resolution
-try {
-  dns.setServers(['8.8.8.8', '1.1.1.1']);
-} catch {
-  // Ignore in restricted environments
-}
 
 // ── Models ───────────────────────────────────────────────────────────────────
 const UserSchema = new Schema(
@@ -89,7 +80,7 @@ async function ensureDB(): Promise<boolean> {
   try {
     mongoose.set('strictQuery', false);
     await mongoose.connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 6000,
+      serverSelectionTimeoutMS: 5000,
     });
     isConnected = true;
     return true;
@@ -243,4 +234,6 @@ app.post(['/api/waste/predict', '/waste/predict'], async (req, res) => {
   return res.json(result);
 });
 
-export default app;
+export default function handler(req: any, res: any) {
+  return app(req, res);
+}
