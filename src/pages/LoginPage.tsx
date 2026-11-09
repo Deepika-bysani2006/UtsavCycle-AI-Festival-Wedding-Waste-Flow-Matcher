@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { ThemeToggle } from '../components/ui/ThemeToggle';
 import { useAuth } from '../contexts/AuthContext';
+import { RoleSelectModal, type SelectedRole } from '../components/ui/RoleSelectModal';
 
 const GOOGLE_ICON = (
   <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
@@ -34,9 +35,9 @@ function getFirebaseError(code: string): string {
 export default function LoginPage() {
   const { signInWithGoogle, signInWithEmail, signInAsDemoUser } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
-  const from = (location.state as any)?.from?.pathname || '/dashboard';
 
+  const [selectedRole, setSelectedRole] = useState<SelectedRole>('ORGANIZER');
+  const [showRoleModal, setShowRoleModal] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
@@ -44,17 +45,28 @@ export default function LoginPage() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
 
-  async function handleGoogle() {
+  const targetDashboard = (role: SelectedRole) =>
+    role === 'RECOVERY_PARTNER' ? '/partner-dashboard' : '/dashboard';
+
+  async function handleGoogleClick() {
+    // Open modal asking user to choose between Event Organizer and Recovery Partner / Supplier
+    setShowRoleModal(true);
+  }
+
+  async function handleGoogleConfirm(role: SelectedRole) {
+    setShowRoleModal(false);
     setError('');
     setGoogleLoading(true);
     try {
-      await signInWithGoogle();
-      navigate(from, { replace: true });
+      await signInWithGoogle(role);
+      navigate(targetDashboard(role), { replace: true });
     } catch (e: any) {
       setError(getFirebaseError(e.code || ''));
-      // Ensure user gets logged in seamlessly
-      await signInAsDemoUser('Demo Event Organizer', 'organizer@utsavcycle.ai');
-      navigate(from, { replace: true });
+      // Seamlessly sign in as selected role
+      const defaultName = role === 'RECOVERY_PARTNER' ? 'Demo Recovery Partner' : 'Demo Event Organizer';
+      const defaultEmail = role === 'RECOVERY_PARTNER' ? 'partner@utsavcycle.ai' : 'organizer@utsavcycle.ai';
+      await signInAsDemoUser(defaultName, defaultEmail, role);
+      navigate(targetDashboard(role), { replace: true });
     } finally {
       setGoogleLoading(false);
     }
@@ -66,8 +78,8 @@ export default function LoginPage() {
     if (!email || !password) { setError('Please fill in all fields.'); return; }
     setLoading(true);
     try {
-      await signInWithEmail(email, password);
-      navigate(from, { replace: true });
+      await signInWithEmail(email, password, selectedRole);
+      navigate(targetDashboard(selectedRole), { replace: true });
     } catch (e: any) {
       setError(getFirebaseError(e.code));
     } finally {
@@ -77,6 +89,16 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-[#f8faf5] dark:bg-[#0d1510] flex flex-col transition-colors duration-200">
+      {/* Role Selection Modal for Google Sign-In */}
+      <RoleSelectModal
+        isOpen={showRoleModal}
+        onClose={() => setShowRoleModal(false)}
+        onConfirm={handleGoogleConfirm}
+        loading={googleLoading}
+        title="Which login do you want?"
+        subtitle="Choose your account type to continue with Google:"
+      />
+
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4">
         <Link to="/" className="flex items-center gap-2">
@@ -94,17 +116,50 @@ export default function LoginPage() {
       {/* Form card */}
       <div className="flex-1 flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-md bg-white dark:bg-[#1a2018] rounded-3xl shadow-card-hover dark:shadow-none border border-transparent dark:border-[#2a3828] p-8">
-          <div className="text-center mb-8">
+          <div className="text-center mb-6">
             <img src="/utsavcycle-logo.png" alt="" className="w-16 h-16 rounded-full object-cover mx-auto mb-4" />
             <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Welcome back</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Sign in to your UtsavCycle AI account</p>
           </div>
 
-          {/* Google */}
+          {/* Account Role Selector Tabs */}
+          <div className="mb-6">
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 text-center uppercase tracking-wider">
+              Select Your Role
+            </label>
+            <div className="grid grid-cols-2 gap-2 bg-gray-100 dark:bg-[#151c14] p-1.5 rounded-2xl">
+              <button
+                type="button"
+                onClick={() => setSelectedRole('ORGANIZER')}
+                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+                  selectedRole === 'ORGANIZER'
+                    ? 'bg-white dark:bg-[#1a2018] text-[#1a6b2f] dark:text-green-400 shadow-sm border border-gray-200/50 dark:border-green-800/40'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
+              >
+                <span>🎪</span>
+                <span>Event Organizer</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedRole('RECOVERY_PARTNER')}
+                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+                  selectedRole === 'RECOVERY_PARTNER'
+                    ? 'bg-white dark:bg-[#1a2018] text-orange-600 dark:text-orange-400 shadow-sm border border-gray-200/50 dark:border-orange-800/40'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
+              >
+                <span>♻️</span>
+                <span>Supplier / Partner</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Google Button */}
           <Button
             variant="outline"
             className="w-full mb-6 border-gray-200 dark:border-[#2a3828] text-gray-700 dark:text-gray-300 hover:border-[#1a6b2f] hover:text-[#1a6b2f]"
-            onClick={handleGoogle}
+            onClick={handleGoogleClick}
             loading={googleLoading}
             icon={!googleLoading ? GOOGLE_ICON : undefined}
           >
@@ -128,7 +183,14 @@ export default function LoginPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <Input label="Email address" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} icon={<Mail size={16} />} />
+            <Input
+              label="Email address"
+              type="email"
+              placeholder={selectedRole === 'RECOVERY_PARTNER' ? 'partner@example.com' : 'organizer@example.com'}
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              icon={<Mail size={16} />}
+            />
             <div className="relative">
               <Input
                 label="Password"
@@ -146,7 +208,9 @@ export default function LoginPage() {
                 {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
-            <Button type="submit" className="w-full" loading={loading}>Sign In</Button>
+            <Button type="submit" className="w-full" loading={loading}>
+              Sign In as {selectedRole === 'RECOVERY_PARTNER' ? 'Supplier / Partner' : 'Event Organizer'}
+            </Button>
           </form>
 
           <p className="text-center text-sm text-gray-500 dark:text-gray-400 mt-6">

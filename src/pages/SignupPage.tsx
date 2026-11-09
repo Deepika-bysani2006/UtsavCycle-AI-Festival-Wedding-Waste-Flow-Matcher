@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, User, AlertCircle } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { ThemeToggle } from '../components/ui/ThemeToggle';
 import { useAuth } from '../contexts/AuthContext';
+import { RoleSelectModal, type SelectedRole } from '../components/ui/RoleSelectModal';
 
 const GOOGLE_ICON = (
   <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
@@ -33,6 +34,8 @@ export default function SignupPage() {
   const { signInWithGoogle, signUpWithEmail, signInAsDemoUser } = useAuth();
   const navigate = useNavigate();
 
+  const [selectedRole, setSelectedRole] = useState<SelectedRole>('ORGANIZER');
+  const [showRoleModal, setShowRoleModal] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -40,16 +43,26 @@ export default function SignupPage() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
 
-  async function handleGoogle() {
+  const targetDashboard = (role: SelectedRole) =>
+    role === 'RECOVERY_PARTNER' ? '/partner-dashboard' : '/dashboard';
+
+  async function handleGoogleClick() {
+    setShowRoleModal(true);
+  }
+
+  async function handleGoogleConfirm(role: SelectedRole) {
+    setShowRoleModal(false);
     setError('');
     setGoogleLoading(true);
     try {
-      await signInWithGoogle();
-      navigate('/onboarding');
+      await signInWithGoogle(role);
+      navigate(targetDashboard(role), { replace: true });
     } catch (e: any) {
       setError(getFirebaseError(e.code || ''));
-      await signInAsDemoUser(name || 'Demo Event Organizer', email || 'organizer@utsavcycle.ai');
-      navigate('/onboarding');
+      const defaultName = role === 'RECOVERY_PARTNER' ? 'Demo Recovery Partner' : 'Demo Event Organizer';
+      const defaultEmail = role === 'RECOVERY_PARTNER' ? 'partner@utsavcycle.ai' : 'organizer@utsavcycle.ai';
+      await signInAsDemoUser(name || defaultName, email || defaultEmail, role);
+      navigate(targetDashboard(role), { replace: true });
     } finally {
       setGoogleLoading(false);
     }
@@ -63,8 +76,8 @@ export default function SignupPage() {
     if (password.length < 6) { setError('Password must be at least 6 characters.'); return; }
     setLoading(true);
     try {
-      await signUpWithEmail(email, password, name);
-      navigate('/onboarding');
+      await signUpWithEmail(email, password, name, selectedRole);
+      navigate(targetDashboard(selectedRole));
     } catch (e: any) {
       setError(getFirebaseError(e.code));
     } finally {
@@ -74,6 +87,16 @@ export default function SignupPage() {
 
   return (
     <div className="min-h-screen bg-[#f8faf5] dark:bg-[#0d1510] flex flex-col">
+      {/* Role Selection Modal for Google Sign-Up */}
+      <RoleSelectModal
+        isOpen={showRoleModal}
+        onClose={() => setShowRoleModal(false)}
+        onConfirm={handleGoogleConfirm}
+        loading={googleLoading}
+        title="Which account do you want to create?"
+        subtitle="Select your role to continue with Google:"
+      />
+
       <div className="flex items-center justify-between px-6 py-4">
         <Link to="/" className="flex items-center gap-2">
           <img src="/utsavcycle-logo.png" alt="UtsavCycle AI" className="w-9 h-9 rounded-full object-cover" />
@@ -88,17 +111,50 @@ export default function SignupPage() {
       </div>
 
       <div className="flex-1 flex items-center justify-center px-4 py-12">
-        <div className="w-full max-w-md bg-white dark:bg-[#1a2018] rounded-3xl shadow-card-hover p-8">
-          <div className="text-center mb-8">
+        <div className="w-full max-w-md bg-white dark:bg-[#1a2018] rounded-3xl shadow-card-hover p-8 border border-transparent dark:border-[#2a3828]">
+          <div className="text-center mb-6">
             <img src="/utsavcycle-logo.png" alt="" className="w-16 h-16 rounded-full object-cover mx-auto mb-4" />
             <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Create your account</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Join UtsavCycle AI — free for event organisers</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Join UtsavCycle AI — sustainable celebration matching</p>
+          </div>
+
+          {/* Account Role Selector Tabs */}
+          <div className="mb-6">
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 text-center uppercase tracking-wider">
+              I am joining as:
+            </label>
+            <div className="grid grid-cols-2 gap-2 bg-gray-100 dark:bg-[#151c14] p-1.5 rounded-2xl">
+              <button
+                type="button"
+                onClick={() => setSelectedRole('ORGANIZER')}
+                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+                  selectedRole === 'ORGANIZER'
+                    ? 'bg-white dark:bg-[#1a2018] text-[#1a6b2f] dark:text-green-400 shadow-sm border border-gray-200/50 dark:border-green-800/40'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
+              >
+                <span>🎪</span>
+                <span>Event Organizer</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedRole('RECOVERY_PARTNER')}
+                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+                  selectedRole === 'RECOVERY_PARTNER'
+                    ? 'bg-white dark:bg-[#1a2018] text-orange-600 dark:text-orange-400 shadow-sm border border-gray-200/50 dark:border-orange-800/40'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
+              >
+                <span>♻️</span>
+                <span>Supplier / Partner</span>
+              </button>
+            </div>
           </div>
 
           <Button
             variant="outline"
             className="w-full mb-6 border-gray-200 dark:border-[#2a3828] text-gray-700 dark:text-gray-200 hover:border-brand-green hover:text-brand-green"
-            onClick={handleGoogle}
+            onClick={handleGoogleClick}
             loading={googleLoading}
             icon={!googleLoading ? GOOGLE_ICON : undefined}
           >
@@ -119,10 +175,10 @@ export default function SignupPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input label="Full name" type="text" placeholder="Your name" value={name} onChange={e => setName(e.target.value)} icon={<User size={16} />} />
-            <Input label="Email address" type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} icon={<Mail size={16} />} />
+            <Input label="Email address" type="email" placeholder={selectedRole === 'RECOVERY_PARTNER' ? 'partner@example.com' : 'organizer@example.com'} value={email} onChange={e => setEmail(e.target.value)} icon={<Mail size={16} />} />
             <Input label="Password" type="password" placeholder="Min 6 characters" value={password} onChange={e => setPassword(e.target.value)} icon={<Lock size={16} />} />
             <Button type="submit" className="w-full" loading={loading}>
-              Create Account
+              Create Account as {selectedRole === 'RECOVERY_PARTNER' ? 'Supplier / Partner' : 'Event Organizer'}
             </Button>
           </form>
 

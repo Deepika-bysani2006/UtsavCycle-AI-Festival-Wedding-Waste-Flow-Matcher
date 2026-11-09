@@ -9,7 +9,7 @@ const roles = [
     id: 'ORGANIZER' as const,
     icon: <Calendar size={32} />,
     title: 'Event Organizer',
-    desc: 'I organize events (weddings, corporate gatherings, festivals) and want to manage waste responsibly.',
+    desc: 'I organize events (weddings, corporate gatherings, festivals, parties) and want to manage waste responsibly.',
     benefits: ['AI waste prediction', 'Partner matching', 'Pickup scheduling', 'Impact reports'],
     color: 'border-brand-green bg-primary-50 text-brand-green',
     active: 'ring-2 ring-brand-green',
@@ -17,9 +17,9 @@ const roles = [
   {
     id: 'RECOVERY_PARTNER' as const,
     icon: <Recycle size={32} />,
-    title: 'Recovery Partner',
-    desc: 'I represent an NGO, composting facility, florist recycler, or waste recovery organization.',
-    benefits: ['Receive pickup requests', 'Manage capacity', 'Track impact', 'Build reputation'],
+    title: 'Recovery Partner / Supplier',
+    desc: 'I represent an NGO, composting facility, recycler, waste collector, or surplus food recovery organization.',
+    benefits: ['Receive pickup requests', 'Manage capacity & intake', 'Track environmental impact', 'Build partner network'],
     color: 'border-orange-400 bg-orange-50 text-orange-600',
     active: 'ring-2 ring-orange-400',
   },
@@ -54,7 +54,7 @@ export default function OnboardingPage() {
         <div className="text-center mb-10">
           <img src="/utsavcycle-logo.png" alt="UtsavCycle AI" className="w-16 h-16 rounded-full object-cover mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">How will you use UtsavCycle AI?</h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-2">Choose your role to get a tailored experience.</p>
+          <p className="text-gray-500 dark:text-gray-400 mt-2">Choose your account type to get a tailored experience.</p>
         </div>
 
         <div className="grid md:grid-cols-2 gap-6 mb-8">
@@ -99,7 +99,7 @@ export default function OnboardingPage() {
           disabled={!selected}
           loading={loading}
         >
-          Continue →
+          Continue to Dashboard →
         </Button>
       </div>
     </div>

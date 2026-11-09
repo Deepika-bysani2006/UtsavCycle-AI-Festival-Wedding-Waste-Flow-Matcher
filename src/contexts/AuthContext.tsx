@@ -12,10 +12,10 @@ interface AuthContextValue {
   currentUser: User | null;
   userProfile: UserProfile | null;
   loading: boolean;
-  signInWithGoogle: () => Promise<void>;
-  signInWithEmail: (email: string, password: string) => Promise<void>;
-  signUpWithEmail: (email: string, password: string, name: string) => Promise<void>;
-  signInAsDemoUser: (name?: string, email?: string) => Promise<void>;
+  signInWithGoogle: (role?: 'ORGANIZER' | 'RECOVERY_PARTNER') => Promise<void>;
+  signInWithEmail: (email: string, password: string, role?: 'ORGANIZER' | 'RECOVERY_PARTNER') => Promise<void>;
+  signUpWithEmail: (email: string, password: string, name: string, role?: 'ORGANIZER' | 'RECOVERY_PARTNER') => Promise<void>;
+  signInAsDemoUser: (name?: string, email?: string, role?: 'ORGANIZER' | 'RECOVERY_PARTNER') => Promise<void>;
   updateUserRole: (role: 'ORGANIZER' | 'RECOVERY_PARTNER') => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -84,19 +84,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  async function signInAsDemoUser(name = 'Demo Event Organizer', email = 'organizer@utsavcycle.ai') {
+  async function signInAsDemoUser(
+    name = 'Demo User',
+    email = 'user@utsavcycle.ai',
+    role: 'ORGANIZER' | 'RECOVERY_PARTNER' = 'ORGANIZER'
+  ) {
+    const isPartner = role === 'RECOVERY_PARTNER';
+    const defaultName = isPartner ? 'Demo Recovery Partner' : 'Demo Event Organizer';
+    const defaultEmail = isPartner ? 'partner@utsavcycle.ai' : 'organizer@utsavcycle.ai';
+
     const demoUser: any = {
-      uid: 'demo_organizer_123',
-      email,
-      displayName: name,
+      uid: isPartner ? 'demo_partner_123' : 'demo_organizer_123',
+      email: email.includes('@') && email !== 'user@utsavcycle.ai' ? email : defaultEmail,
+      displayName: name && name !== 'Demo User' ? name : defaultName,
       photoURL: '',
     };
     const demoProfile: UserProfile = {
-      uid: 'demo_organizer_123',
-      name,
-      email,
+      uid: demoUser.uid,
+      name: demoUser.displayName,
+      email: demoUser.email,
       photoURL: '',
-      role: 'ORGANIZER',
+      role,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -107,9 +115,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch { /* ignore */ }
   }
 
-  async function signInWithGoogle() {
+  async function signInWithGoogle(role: 'ORGANIZER' | 'RECOVERY_PARTNER' = 'ORGANIZER') {
     if (!auth) {
-      await signInAsDemoUser();
+      await signInAsDemoUser(
+        role === 'RECOVERY_PARTNER' ? 'Demo Recovery Partner' : 'Demo Event Organizer',
+        role === 'RECOVERY_PARTNER' ? 'partner@utsavcycle.ai' : 'organizer@utsavcycle.ai',
+        role
+      );
       return;
     }
     try {
@@ -124,12 +136,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           name: user.displayName || '',
           email: user.email || '',
           photoURL: user.photoURL || '',
-          role: 'ORGANIZER',
+          role,
         });
         const profile = await withTimeout(getUserProfile(user.uid));
-        setUserProfile(profile);
+        if (profile) {
+          if (!profile.role || profile.role !== role) {
+            await updateUserRole(role);
+          } else {
+            setUserProfile(profile);
+          }
+        } else {
+          await updateUserRole(role);
+        }
       } catch {
-        // Non-fatal
+        await updateUserRole(role);
       }
     } catch (err: any) {
       const isDomainOrConfigError =
@@ -142,33 +162,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (isDomainOrConfigError) {
         console.warn('Google Auth domain/config restriction detected. Activating Demo Session fallback.', err);
-        await signInAsDemoUser('Demo Event Organizer', 'organizer@utsavcycle.ai');
+        await signInAsDemoUser(
+          role === 'RECOVERY_PARTNER' ? 'Demo Recovery Partner' : 'Demo Event Organizer',
+          role === 'RECOVERY_PARTNER' ? 'partner@utsavcycle.ai' : 'organizer@utsavcycle.ai',
+          role
+        );
         return;
       }
       throw err;
     }
   }
 
-  async function signInWithEmail(email: string, password: string) {
+  async function signInWithEmail(email: string, password: string, role?: 'ORGANIZER' | 'RECOVERY_PARTNER') {
     if (!auth) {
-      await signInAsDemoUser('Demo User', email);
+      await signInAsDemoUser('Demo User', email, role || 'ORGANIZER');
       return;
     }
     try {
       await signInWithEmailAndPassword(auth, email, password);
       try { localStorage.removeItem('uc_demo_user'); } catch { /* ignore */ }
+      if (role) {
+        await updateUserRole(role);
+      }
     } catch (err: any) {
       if (err?.code === 'auth/unauthorized-domain' || err?.code === 'auth/operation-not-allowed') {
-        await signInAsDemoUser('Demo User', email);
+        await signInAsDemoUser('Demo User', email, role || 'ORGANIZER');
         return;
       }
       throw err;
     }
   }
 
-  async function signUpWithEmail(email: string, password: string, name: string) {
+  async function signUpWithEmail(email: string, password: string, name: string, role: 'ORGANIZER' | 'RECOVERY_PARTNER' = 'ORGANIZER') {
     if (!auth) {
-      await signInAsDemoUser(name, email);
+      await signInAsDemoUser(name, email, role);
       return;
     }
     try {
@@ -181,16 +208,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           name,
           email,
           photoURL: '',
-          role: 'ORGANIZER',
+          role,
         });
         const profile = await withTimeout(getUserProfile(result.user.uid));
-        setUserProfile(profile);
+        setUserProfile(profile || {
+          uid: result.user.uid,
+          name,
+          email,
+          photoURL: '',
+          role,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
       } catch {
-        // Non-fatal
+        await updateUserRole(role);
       }
     } catch (err: any) {
       if (err?.code === 'auth/unauthorized-domain' || err?.code === 'auth/operation-not-allowed') {
-        await signInAsDemoUser(name, email);
+        await signInAsDemoUser(name, email, role);
         return;
       }
       throw err;

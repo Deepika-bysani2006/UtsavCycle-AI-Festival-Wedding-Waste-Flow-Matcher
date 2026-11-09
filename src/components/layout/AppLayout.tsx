@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   LayoutDashboard, Leaf, Users, Truck, MessageSquare,
-  LogOut, Menu, X, Bell, ChevronDown, BarChart2, Calendar,
+  LogOut, Menu, X, Bell, ChevronDown, BarChart2, Calendar, Repeat,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { ThemeToggle } from '../ui/ThemeToggle';
@@ -32,16 +32,23 @@ const partnerNav: NavItem[] = [
 ];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
-  const { currentUser, userProfile, logout } = useAuth();
+  const { currentUser, userProfile, logout, updateUserRole } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
-  const navItems = userProfile?.role === 'RECOVERY_PARTNER' ? partnerNav : organizerNav;
+  const isPartner = userProfile?.role === 'RECOVERY_PARTNER';
+  const navItems = isPartner ? partnerNav : organizerNav;
 
   async function handleLogout() {
     await logout();
     navigate('/login');
+  }
+
+  async function handleSwitchRole() {
+    const newRole = isPartner ? 'ORGANIZER' : 'RECOVERY_PARTNER';
+    await updateUserRole(newRole);
+    navigate(newRole === 'RECOVERY_PARTNER' ? '/partner-dashboard' : '/dashboard');
   }
 
   const Sidebar = ({ mobile = false }: { mobile?: boolean }) => (
@@ -59,10 +66,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Role badge */}
-      <div className="px-4 py-2 bg-primary-50 dark:bg-green-900/20 mx-4 mt-4 rounded-xl">
-        <p className="text-xs font-medium text-[#1a6b2f] dark:text-green-400">
-          {userProfile?.role === 'RECOVERY_PARTNER' ? '♻️ Recovery Partner' : '🎪 Event Organizer'}
+      <div className="px-4 py-2.5 bg-primary-50 dark:bg-green-900/20 mx-4 mt-4 rounded-xl flex items-center justify-between border border-transparent dark:border-green-800/30">
+        <p className="text-xs font-semibold text-[#1a6b2f] dark:text-green-400">
+          {isPartner ? '♻️ Supplier / Partner' : '🎪 Event Organizer'}
         </p>
+        <button
+          onClick={handleSwitchRole}
+          className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-[#1a6b2f] dark:text-gray-400 dark:hover:text-green-300 underline transition-colors"
+          title="Switch between Organizer and Supplier / Recovery Partner"
+        >
+          <Repeat size={11} /> Switch
+        </button>
       </div>
 
       {/* Nav */}
@@ -75,7 +89,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             className={({ isActive }) => clsx(
               'flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-150',
               isActive
-                ? 'bg-primary-50 dark:bg-green-900/20 text-[#1a6b2f] dark:text-green-400'
+                ? 'bg-primary-50 dark:bg-green-900/20 text-[#1a6b2f] dark:text-green-400 font-semibold'
                 : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-[#1f2d1d] hover:text-[#1a6b2f] dark:hover:text-green-400'
             )}
           >
@@ -162,11 +176,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 <ChevronDown size={14} className="text-gray-400 dark:text-gray-500" />
               </button>
               {profileOpen && (
-                <div className="absolute right-0 top-full mt-1 w-48 bg-white dark:bg-[#1a2018] rounded-xl shadow-card-hover dark:shadow-none border border-gray-100 dark:border-[#2a3828] py-2 z-50">
-                  <p className="px-4 py-2 text-xs text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-[#2a3828]">{currentUser?.email}</p>
+                <div className="absolute right-0 top-full mt-1 w-52 bg-white dark:bg-[#1a2018] rounded-xl shadow-card-hover dark:shadow-none border border-gray-100 dark:border-[#2a3828] py-2 z-50">
+                  <p className="px-4 py-2 text-xs text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-[#2a3828] truncate">{currentUser?.email}</p>
+                  <button
+                    onClick={() => { setProfileOpen(false); handleSwitchRole(); }}
+                    className="w-full flex items-center gap-2 px-4 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-[#1f2d1d] transition-colors"
+                  >
+                    <Repeat size={13} /> Switch to {isPartner ? 'Event Organizer' : 'Supplier / Partner'}
+                  </button>
                   <button
                     onClick={handleLogout}
-                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors border-t border-gray-100 dark:border-[#2a3828]"
                   >
                     <LogOut size={14} /> Sign out
                   </button>

@@ -53,12 +53,14 @@ const testimonials = [
 ];
 
 export default function LandingPage() {
-  const { currentUser } = useAuth();
+  const { currentUser, userProfile } = useAuth();
   const navigate = useNavigate();
   const [faqOpen, setFaqOpen] = useState<number | null>(null);
 
+  const targetDashboard = userProfile?.role === 'RECOVERY_PARTNER' ? '/partner-dashboard' : '/dashboard';
+
   function handleGetStarted() {
-    if (currentUser) navigate('/dashboard');
+    if (currentUser) navigate(targetDashboard);
     else navigate('/signup');
   }
 
@@ -88,7 +90,7 @@ export default function LandingPage() {
             <div className="flex items-center gap-3">
               <ThemeToggle />
               {currentUser ? (
-                <Button onClick={() => navigate('/dashboard')} size="sm">Go to Dashboard</Button>
+                <Button onClick={() => navigate(targetDashboard)} size="sm">Go to Dashboard</Button>
               ) : (
                 <>
                   <Link to="/login" className="text-sm text-gray-600 dark:text-gray-300 hover:text-brand-green dark:hover:text-green-400 font-medium transition-colors">Sign in</Link>
