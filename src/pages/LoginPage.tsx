@@ -25,11 +25,11 @@ function getFirebaseError(code: string): string {
     'auth/network-request-failed': 'Network error. Check your connection.',
     'auth/popup-closed-by-user': 'Google sign-in popup was closed.',
     'auth/popup-blocked': 'Sign-in popup was blocked by browser. Please enable popups.',
-    'auth/unauthorized-domain': 'This domain is not added to Firebase Authorized Domains. Logged in as Demo User.',
-    'auth/operation-not-allowed': 'Google Sign-In is not enabled in Firebase Console. Logged in as Demo User.',
+    'auth/unauthorized-domain': 'This domain (utsavai-beta.vercel.app) is not authorized in Firebase. Add it in Firebase Console -> Authentication -> Settings -> Authorized Domains.',
+    'auth/operation-not-allowed': 'Google Sign-In is not enabled in Firebase Console. Enable it in Authentication -> Sign-in method.',
     'auth/invalid-credential': 'Invalid email or password.',
   };
-  return errors[code] || 'Authentication error. Continuing with Demo Mode.';
+  return errors[code] || `Authentication error (${code || 'unknown'}). Please check your Firebase settings.`;
 }
 
 export default function LoginPage() {
@@ -61,12 +61,8 @@ export default function LoginPage() {
       await signInWithGoogle(role);
       navigate(targetDashboard(role), { replace: true });
     } catch (e: any) {
-      setError(getFirebaseError(e.code || ''));
-      // Seamlessly sign in as selected role
-      const defaultName = role === 'RECOVERY_PARTNER' ? 'Demo Recovery Partner' : 'Demo Event Organizer';
-      const defaultEmail = role === 'RECOVERY_PARTNER' ? 'partner@utsavcycle.ai' : 'organizer@utsavcycle.ai';
-      await signInAsDemoUser(defaultName, defaultEmail, role);
-      navigate(targetDashboard(role), { replace: true });
+      console.error('Google Sign-In Error:', e);
+      setError(getFirebaseError(e?.code || ''));
     } finally {
       setGoogleLoading(false);
     }
@@ -176,9 +172,28 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-sm px-4 py-3 rounded-xl mb-4 border border-red-100 dark:border-red-800/40">
-              <AlertCircle size={16} className="shrink-0" />
-              {error}
+            <div className="bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 text-sm p-4 rounded-2xl mb-4 border border-red-100 dark:border-red-800/40">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle size={18} className="shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
+                <div className="flex-1">
+                  <p className="font-medium text-xs leading-relaxed">{error}</p>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setError('');
+                      await signInAsDemoUser(
+                        selectedRole === 'RECOVERY_PARTNER' ? 'Demo Recovery Partner' : 'Demo Event Organizer',
+                        selectedRole === 'RECOVERY_PARTNER' ? 'partner@utsavcycle.ai' : 'organizer@utsavcycle.ai',
+                        selectedRole
+                      );
+                      navigate(targetDashboard(selectedRole), { replace: true });
+                    }}
+                    className="mt-2 text-xs font-semibold text-brand-green dark:text-green-400 underline hover:opacity-85 block"
+                  >
+                    Continue in Demo Mode instead →
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 

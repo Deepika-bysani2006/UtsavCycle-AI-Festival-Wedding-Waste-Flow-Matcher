@@ -118,62 +118,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signInWithGoogle(role: 'ORGANIZER' | 'RECOVERY_PARTNER' = 'ORGANIZER') {
-    if (!auth) {
-      await signInAsDemoUser(
-        role === 'RECOVERY_PARTNER' ? 'Demo Recovery Partner' : 'Demo Event Organizer',
-        role === 'RECOVERY_PARTNER' ? 'partner@utsavcycle.ai' : 'organizer@utsavcycle.ai',
-        role
-      );
-      return;
-    }
+    const result = await signInWithPopup(auth, googleProvider);
+    const user = result.user;
     try {
-      const result = await signInWithPopup(auth, googleProvider);
-      const user = result.user;
-      try {
-        localStorage.removeItem('uc_demo_user');
-      } catch { /* ignore */ }
-      try {
-        const profData = {
-          uid: user.uid,
-          name: user.displayName || '',
-          email: user.email || '',
-          photoURL: user.photoURL || '',
-          role,
-        };
-        await createUserProfile(profData);
-        syncUserToMongoDB({ ...profData, createdAt: new Date(), updatedAt: new Date() });
-        const profile = await withTimeout(getUserProfile(user.uid));
-        if (profile) {
-          if (!profile.role || profile.role !== role) {
-            await updateUserRole(role);
-          } else {
-            setUserProfile(profile);
-          }
-        } else {
-          await updateUserRole(role);
-        }
-      } catch {
+      localStorage.removeItem('uc_demo_user');
+    } catch { /* ignore */ }
+    const profData = {
+      uid: user.uid,
+      name: user.displayName || user.email?.split('@')[0] || 'User',
+      email: user.email || '',
+      photoURL: user.photoURL || '',
+      role,
+    };
+    try {
+      await createUserProfile(profData);
+    } catch (e) {
+      console.warn('createUserProfile firestore warning:', e);
+    }
+    syncUserToMongoDB({ ...profData, createdAt: new Date(), updatedAt: new Date() });
+    const profile = await withTimeout(getUserProfile(user.uid));
+    if (profile) {
+      if (!profile.role || profile.role !== role) {
         await updateUserRole(role);
+      } else {
+        setUserProfile(profile);
       }
-    } catch (err: any) {
-      const isDomainOrConfigError =
-        err?.code === 'auth/unauthorized-domain' ||
-        err?.code === 'auth/operation-not-allowed' ||
-        err?.code === 'auth/unauthorized-origin' ||
-        err?.code === 'auth/internal-error' ||
-        err?.code === 'auth/popup-blocked' ||
-        !err?.code;
-
-      if (isDomainOrConfigError) {
-        console.warn('Google Auth domain/config restriction detected. Activating Demo Session fallback.', err);
-        await signInAsDemoUser(
-          role === 'RECOVERY_PARTNER' ? 'Demo Recovery Partner' : 'Demo Event Organizer',
-          role === 'RECOVERY_PARTNER' ? 'partner@utsavcycle.ai' : 'organizer@utsavcycle.ai',
-          role
-        );
-        return;
-      }
-      throw err;
+    } else {
+      await updateUserRole(role);
     }
   }
 
